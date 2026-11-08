@@ -118,3 +118,23 @@ SDT team project: a simplified Digital Banking System where customers manage ban
 The factories create each account together with its rules and its fee strategy. During a transfer, the chain of responsibility validates the request, using the source account's fee strategy to check that the balance covers the amount plus the fee. If all checks pass, the amount and the fee are applied and the transaction is marked as successful; otherwise it is marked as rejected. In both cases the observers are notified of the result.
 
 > **Factory Method** ➜ **Chain of Responsibility** ➜ **Strategy** ➜ **Observer**
+
+---
+
+## TASK 3. UML class diagram
+
+A single class diagram covers the whole system. The design patterns are integrated into it rather than drawn separately: the classes of each pattern share a color, and a note in the same color, placed in the pattern's package, names the role each class plays in the pattern.
+
+| Package | Responsibility |
+|---------|----------------|
+| `customer` | Customers, administrators and their profiles |
+| `account` | Bank accounts, account creation (Factory Method), transfer fees (Strategy), account access and status |
+| `transaction` | Transfers, transfer validation (Chain of Responsibility), transaction history and monitoring |
+| `event` | Publishing banking events to observers (Observer) and the audit log |
+| `notification` | Customer notifications created from banking events |
+
+![Class diagram](docs/diagrams/class-diagram.svg)
+
+The web layer (REST controllers) and the persistence layer (repositories) are omitted to keep the diagram readable.
+
+PNG version: [class-diagram.png](docs/diagrams/class-diagram.png) · PlantUML source: [class-diagram.puml](docs/diagrams/class-diagram.puml)

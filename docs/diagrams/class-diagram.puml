@@ -1,0 +1,500 @@
+@startuml class-diagram
+title Digital Banking System - Class Diagram
+
+set separator none
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle frame
+skinparam nodesep 40
+skinparam ranksep 50
+skinparam class {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+  ArrowColor #444444
+}
+skinparam note {
+  BorderColor #777777
+}
+
+' ------------------------------------------------------------
+' customer
+' ------------------------------------------------------------
+package "customer" {
+
+  abstract class User {
+    - id : Long
+    - fullName : String
+    - email : String
+    - createdAt : LocalDateTime
+    + {abstract} isAdmin() : boolean
+  }
+
+  class Customer {
+    - phone : String
+    - address : String
+    + updateProfile(fullName : String, email : String, phone : String, address : String) : void
+    + isAdmin() : boolean
+  }
+
+  class Administrator {
+    + isAdmin() : boolean
+  }
+
+  class CustomerService {
+    + register(fullName : String, email : String, phone : String, address : String) : Customer
+    + updateProfile(callerId : Long, customerId : Long, fullName : String, email : String, phone : String, address : String) : Customer
+    + getProfile(callerId : Long, customerId : Long) : Customer
+    + listCustomers(callerId : Long) : List<Customer>
+    + isAdmin(userId : Long) : boolean
+  }
+}
+
+' ------------------------------------------------------------
+' account
+' ------------------------------------------------------------
+package "account" {
+
+  note as NFactory #DDEBF7
+    <b>Factory Method</b>
+    Creator: AccountFactory
+    Concrete creators: CheckingAccountFactory, SavingsAccountFactory
+    Product: Account
+    Concrete products: CheckingAccount, SavingsAccount
+    Client: AccountService
+  end note
+
+  note as NStrategy #FCE4D6
+    <b>Strategy</b>
+    Strategy: FeeStrategy
+    Concrete strategies: FixedFeeStrategy,
+    PercentageFeeStrategy, NoFeeStrategy
+    Context: Account
+  end note
+
+  abstract class Account {
+    - id : Long
+    - accountNumber : String
+    - ownerId : Long
+    - authorizedCustomerIds : Set<Long>
+    - balance : BigDecimal
+    - currency : String
+    - status : AccountStatus
+    - dailyTransferLimit : BigDecimal
+    - feeStrategy : FeeStrategy
+    - version : Long
+    + {abstract} availableToSpend() : BigDecimal
+    + {abstract} getType() : AccountType
+    + canSend() : boolean
+    + canReceive() : boolean
+    + hasAccess(userId : Long) : boolean
+    + calculateFee(amount : BigDecimal) : BigDecimal
+    + debit(amount : BigDecimal) : void
+    + credit(amount : BigDecimal) : void
+    + grantAccess(customerId : Long) : void
+    + revokeAccess(customerId : Long) : void
+    + freeze() : void
+    + unfreeze() : void
+    + close() : void
+    + changeFeeStrategy(feeStrategy : FeeStrategy) : void
+  }
+
+  class CheckingAccount {
+    - overdraftLimit : BigDecimal
+    + availableToSpend() : BigDecimal
+    + getType() : AccountType
+  }
+
+  class SavingsAccount {
+    - interestRate : BigDecimal
+    + availableToSpend() : BigDecimal
+    + getType() : AccountType
+  }
+
+  enum AccountStatus {
+    ACTIVE
+    FROZEN
+    CLOSED
+  }
+
+  enum AccountType {
+    CHECKING
+    SAVINGS
+  }
+
+  abstract class AccountFactory #DDEBF7 {
+    + openAccount(ownerId : Long, initialDeposit : BigDecimal) : Account
+    + {abstract} supportedType() : AccountType
+    # {abstract} createAccount(ownerId : Long, accountNumber : String) : Account
+    # {abstract} accountPrefix() : String
+    # {abstract} minimumInitialDeposit() : BigDecimal
+    # nextAccountNumber() : String
+  }
+
+  class CheckingAccountFactory #DDEBF7 {
+    + supportedType() : AccountType
+    # createAccount(ownerId : Long, accountNumber : String) : Account
+    # accountPrefix() : String
+    # minimumInitialDeposit() : BigDecimal
+  }
+
+  class SavingsAccountFactory #DDEBF7 {
+    + supportedType() : AccountType
+    # createAccount(ownerId : Long, accountNumber : String) : Account
+    # accountPrefix() : String
+    # minimumInitialDeposit() : BigDecimal
+  }
+
+  interface FeeStrategy #FCE4D6 {
+    + calculateFee(amount : BigDecimal) : BigDecimal
+  }
+
+  class FixedFeeStrategy #FCE4D6 {
+    - fee : BigDecimal
+    + calculateFee(amount : BigDecimal) : BigDecimal
+  }
+
+  class PercentageFeeStrategy #FCE4D6 {
+    - rate : BigDecimal
+    + calculateFee(amount : BigDecimal) : BigDecimal
+  }
+
+  class NoFeeStrategy #FCE4D6 {
+    + calculateFee(amount : BigDecimal) : BigDecimal
+  }
+
+  class AccountService {
+    - factories : Map<AccountType, AccountFactory>
+    - customerService : CustomerService
+    - publisher : BankingEventPublisher
+    + openAccount(callerId : Long, ownerId : Long, type : AccountType, initialDeposit : BigDecimal) : Account
+    + getAccount(callerId : Long, accountId : Long) : Account
+    + getBalance(callerId : Long, accountId : Long) : BigDecimal
+    + listCustomerAccounts(callerId : Long, customerId : Long) : List<Account>
+    + grantAccess(callerId : Long, accountId : Long, customerId : Long) : void
+    + revokeAccess(callerId : Long, accountId : Long, customerId : Long) : void
+    + freeze(callerId : Long, accountId : Long) : void
+    + unfreeze(callerId : Long, accountId : Long) : void
+    + close(callerId : Long, accountId : Long) : void
+    + waiveFees(callerId : Long, accountId : Long) : void
+    + quoteFee(accountId : Long, amount : BigDecimal) : BigDecimal
+    + applyTransfer(sourceId : Long, targetId : Long, amount : BigDecimal, fee : BigDecimal) : void
+  }
+}
+
+' ------------------------------------------------------------
+' transaction
+' ------------------------------------------------------------
+package "transaction" {
+
+  note as NChain #E2F0D9
+    <b>Chain of Responsibility</b>
+    Handler: TransferValidationHandler
+    Concrete handlers: the seven *Handler classes
+    Request: TransferContext
+    Client: TransferService
+  end note
+
+  class TransactionFilter <<record>> {
+    + status : TransactionStatus
+    + accountId : Long
+    + from : LocalDate
+    + to : LocalDate
+  }
+
+  class TransactionQueryService {
+    - accountClient : AccountClient
+    + getAccountHistory(callerId : Long, accountId : Long) : List<Transaction>
+    + search(callerId : Long, filter : TransactionFilter) : List<Transaction>
+  }
+
+  class Transaction {
+    - id : Long
+    - sourceAccountId : Long
+    - targetAccountId : Long
+    - initiatedBy : Long
+    - amount : BigDecimal
+    - fee : BigDecimal
+    - status : TransactionStatus
+    - rejectionReason : String
+    - createdAt : LocalDateTime
+    - completedAt : LocalDateTime
+    + markSuccessful(fee : BigDecimal) : void
+    + markRejected(reason : String) : void
+  }
+
+  enum TransactionStatus {
+    PENDING
+    SUCCESSFUL
+    REJECTED
+  }
+
+  class TransferRequest <<record>> {
+    + callerId : Long
+    + sourceAccountId : Long
+    + targetAccountId : Long
+    + amount : BigDecimal
+  }
+
+  class AccountSnapshot <<record>> {
+    + id : Long
+    + ownerId : Long
+    + authorizedCustomerIds : Set<Long>
+    + canSend : boolean
+    + canReceive : boolean
+    + availableToSpend : BigDecimal
+    + dailyTransferLimit : BigDecimal
+    + hasAccess(userId : Long) : boolean
+  }
+
+  class TransferContext {
+    - request : TransferRequest
+    - source : AccountSnapshot
+    - target : AccountSnapshot
+    - fee : BigDecimal
+    - sentToday : BigDecimal
+  }
+
+  class ValidationResult <<record>> {
+    + valid : boolean
+    + reason : String
+    + {static} ok() : ValidationResult
+    + {static} rejected(reason : String) : ValidationResult
+  }
+
+  abstract class TransferValidationHandler #E2F0D9 {
+    - next : TransferValidationHandler
+    + setNext(next : TransferValidationHandler) : TransferValidationHandler
+    + validate(context : TransferContext) : ValidationResult
+    # {abstract} check(context : TransferContext) : ValidationResult
+  }
+
+  together {
+    class PositiveAmountHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+    class DifferentAccountsHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+    class AccountExistenceHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+    class AuthorizationHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+    class AccountStatusHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+    class SufficientFundsHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+    class DailyLimitHandler #E2F0D9 {
+      # check(context : TransferContext) : ValidationResult
+    }
+  }
+
+  class TransferService {
+    - validationChain : TransferValidationHandler
+    - accountClient : AccountClient
+    - publisher : BankingEventPublisher
+    + transfer(request : TransferRequest) : Transaction
+  }
+
+  interface AccountClient {
+    + getAccount(accountId : Long) : Optional<AccountSnapshot>
+    + quoteFee(accountId : Long, amount : BigDecimal) : BigDecimal
+    + applyTransfer(sourceId : Long, targetId : Long, amount : BigDecimal, fee : BigDecimal) : void
+    + isAdmin(userId : Long) : boolean
+  }
+
+  class LocalAccountClient {
+    - accountService : AccountService
+    - customerService : CustomerService
+  }
+}
+
+' ------------------------------------------------------------
+' event
+' ------------------------------------------------------------
+package "event" {
+
+  note as NObserver #E4DFEC
+    <b>Observer</b>
+    Subject: BankingEventPublisher
+    Observer: BankingEventObserver
+    Concrete observers: CustomerNotificationObserver,
+    AuditLogObserver
+    Publishers of events: TransferService, AccountService
+  end note
+
+  class BankingEvent {
+    - id : UUID
+    - type : EventType
+    - occurredAt : LocalDateTime
+    - recipientIds : List<Long>
+    - accountId : Long
+    - transactionId : Long
+    - message : String
+  }
+
+  enum EventType {
+    TRANSFER_COMPLETED
+    TRANSFER_REJECTED
+    ACCOUNT_OPENED
+    ACCOUNT_STATUS_CHANGED
+    ACCESS_GRANTED
+    ACCESS_REVOKED
+    LOW_BALANCE
+    FEE_POLICY_CHANGED
+  }
+
+  class BankingEventPublisher #E4DFEC {
+    - observers : List<BankingEventObserver>
+    + subscribe(observer : BankingEventObserver) : void
+    + unsubscribe(observer : BankingEventObserver) : void
+    + publish(event : BankingEvent) : void
+  }
+
+  interface BankingEventObserver #E4DFEC {
+    + onEvent(event : BankingEvent) : void
+  }
+
+  class AuditLogObserver #E4DFEC {
+    - auditLog : AuditLog
+    + onEvent(event : BankingEvent) : void
+  }
+
+  class AuditLog {
+    - entries : List<BankingEvent>
+    + record(event : BankingEvent) : void
+    + getEntries() : List<BankingEvent>
+  }
+}
+
+' ------------------------------------------------------------
+' notification
+' ------------------------------------------------------------
+package "notification" {
+
+  class Notification {
+    - id : Long
+    - recipientId : Long
+    - type : EventType
+    - message : String
+    - createdAt : LocalDateTime
+    - read : boolean
+    + markRead() : void
+  }
+
+  class NotificationService {
+    + create(recipientId : Long, type : EventType, message : String) : Notification
+    + listForCustomer(callerId : Long, customerId : Long) : List<Notification>
+    + markRead(callerId : Long, notificationId : Long) : void
+  }
+
+  class CustomerNotificationObserver #E4DFEC {
+    - notificationService : NotificationService
+    + onEvent(event : BankingEvent) : void
+  }
+}
+
+' ------------------------------------------------------------
+' relationships
+' ------------------------------------------------------------
+
+' customer
+User <|-- Customer
+User <|-- Administrator
+CustomerService ..> Customer : <<create>>
+Customer "1" -- "0..*" Account : owns >
+
+' account
+Account <|-- CheckingAccount
+Account <|-- SavingsAccount
+Account --> "1" AccountStatus
+Account ..> AccountType
+Account o--> "1" FeeStrategy : feeStrategy
+FeeStrategy <|.. FixedFeeStrategy
+FeeStrategy <|.. PercentageFeeStrategy
+FeeStrategy <|.. NoFeeStrategy
+AccountFactory <|-- CheckingAccountFactory
+AccountFactory <|-- SavingsAccountFactory
+AccountFactory ..> Account : <<create>>
+CheckingAccountFactory ..> CheckingAccount : <<create>>
+CheckingAccountFactory ..> FixedFeeStrategy : <<create>>
+SavingsAccountFactory ..> SavingsAccount : <<create>>
+SavingsAccountFactory ..> PercentageFeeStrategy : <<create>>
+AccountService o--> "1..*" AccountFactory : factories
+AccountService ..> "<<create>>" NoFeeStrategy
+AccountService ..> Account : manages
+AccountService --> CustomerService
+AccountService --> BankingEventPublisher
+
+' transaction
+Transaction --> "1" TransactionStatus
+Transaction "0..*" --> "1" Account : source >
+Transaction "0..*" --> "1" Account : target >
+TransferValidationHandler -up-> "next 0..1" TransferValidationHandler
+TransferValidationHandler <|-down- PositiveAmountHandler
+TransferValidationHandler <|-down- DifferentAccountsHandler
+TransferValidationHandler <|-down- AccountExistenceHandler
+TransferValidationHandler <|-down- AuthorizationHandler
+TransferValidationHandler <|-down- AccountStatusHandler
+TransferValidationHandler <|-down- SufficientFundsHandler
+TransferValidationHandler <|-down- DailyLimitHandler
+TransferValidationHandler ..> TransferContext
+TransferValidationHandler ..> ValidationResult
+TransferContext *--> "1" TransferRequest
+TransferContext o--> "0..2" AccountSnapshot
+TransferService --> TransferValidationHandler
+TransferService --> AccountClient
+TransferService --> BankingEventPublisher
+TransferService .down.> Transaction : <<create>>
+Transaction -[hidden]down- TransactionQueryService
+TransactionQueryService --> AccountClient
+TransactionQueryService ..> TransactionFilter
+TransactionQueryService ..> Transaction
+AccountClient <|.. LocalAccountClient
+LocalAccountClient --> AccountService
+LocalAccountClient --> CustomerService
+
+
+PositiveAmountHandler -[hidden]down- AccountStatusHandler
+AuthorizationHandler -[hidden]down- SufficientFundsHandler
+AccountExistenceHandler -[hidden]down- DailyLimitHandler
+
+' event and notification
+BankingEventPublisher o--> "0..*" BankingEventObserver : observers
+BankingEventPublisher ..> BankingEvent
+BankingEvent --> "1" EventType
+BankingEventObserver <|.. AuditLogObserver
+BankingEventObserver <|.. CustomerNotificationObserver
+AuditLogObserver --> AuditLog
+CustomerNotificationObserver --> NotificationService
+NotificationService ..> Notification : <<create>>
+
+legend right
+  |= Color |= Design pattern |
+  |<back:#DDEBF7>          </back>| Factory Method |
+  |<back:#E2F0D9>          </back>| Chain of Responsibility |
+  |<back:#FCE4D6>          </back>| Strategy |
+  |<back:#E4DFEC>          </back>| Observer |
+
+  |= Notation |= Meaning |
+  | <b>C</b> / <b>A</b> / <b>I</b> / <b>E</b> | class / abstract class / interface / enum |
+  | <i>italic</i> name | abstract class or method |
+  | underlined name | static method |
+  | <b>+</b>  <b>-</b>  <b>#</b> | public / private / protected |
+  | ———▷ | inheritance (is a) |
+  | - - - ▷ | interface realization (implements) |
+  | ———> | association (holds a reference to) |
+  | ◇——> | aggregation (has a replaceable part) |
+  | ◆——> | composition (owns the part) |
+  | - - - > | dependency (uses); «create» = creates instances |
+  | 1, 0..1, 0..*, 1..* | multiplicity (how many) |
+
+  Web layer (REST controllers) and persistence
+  layer (repositories) are omitted for readability.
+endlegend
+
+@enduml
