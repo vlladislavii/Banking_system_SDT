@@ -28,6 +28,17 @@ SDT team project: a simplified Digital Banking System where customers manage ban
 | 2 | BASIUK Yelyzaveta | 1241EB |
 | 3 | KUCHERENKO Illia | 1241EB |
 
+### Table of contents
+
+1. [TASK 1. Design patterns](#task-1-design-patterns)
+2. [TASK 2. Justification of the design patterns](#task-2-justification-of-the-design-patterns)
+   - [Factory Method](#factory-method)
+   - [Chain of Responsibility](#chain-of-responsibility)
+   - [Strategy](#strategy)
+   - [Observer](#observer)
+   - [How the patterns work together](#how-the-patterns-work-together)
+3. [TASK 3. UML class diagram](#task-3-uml-class-diagram)
+
 ---
 
 ## TASK 1. Design patterns
