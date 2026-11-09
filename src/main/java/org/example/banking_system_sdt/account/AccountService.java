@@ -1,6 +1,9 @@
 package org.example.banking_system_sdt.account;
 
 import org.example.banking_system_sdt.customer.CustomerService;
+import org.example.banking_system_sdt.event.BankingEvent;
+import org.example.banking_system_sdt.event.BankingEventPublisher;
+import org.example.banking_system_sdt.event.EventType;
 import org.example.banking_system_sdt.exception.BadRequestException;
 import org.example.banking_system_sdt.exception.ForbiddenException;
 import org.example.banking_system_sdt.exception.NotFoundException;
@@ -9,9 +12,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -23,17 +28,21 @@ public class AccountService {
 
     private final Map<AccountType, AccountFactory> factories;
     private final CustomerService customerService;
+    private final BankingEventPublisher publisher;
     private final AccountRepository accountRepository;
 
     @Autowired
-    public AccountService(List<AccountFactory> factoryList, CustomerService customerService, AccountRepository accountRepository) {
+    public AccountService(List<AccountFactory> factoryList, CustomerService customerService,
+                          BankingEventPublisher publisher, AccountRepository accountRepository) {
         this(factoryList.stream().collect(Collectors.toMap(AccountFactory::supportedType, Function.identity())),
-                customerService, accountRepository);
+                customerService, publisher, accountRepository);
     }
 
-    public AccountService(Map<AccountType, AccountFactory> factories, CustomerService customerService, AccountRepository accountRepository) {
+    public AccountService(Map<AccountType, AccountFactory> factories, CustomerService customerService,
+                          BankingEventPublisher publisher, AccountRepository accountRepository) {
         this.factories = factories;
         this.customerService = customerService;
+        this.publisher = publisher;
         this.accountRepository = accountRepository;
     }
 
@@ -46,7 +55,21 @@ public class AccountService {
         }
 
         Account account = factory.openAccount(ownerId, initialDeposit);
-        return accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.ACCOUNT_OPENED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId()),
+                    saved.getId(),
+                    null,
+                    "Account opened: " + saved.getAccountNumber() + " (" + saved.getType() + ")"
+            ));
+        }
+
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -85,7 +108,19 @@ public class AccountService {
             throw new ForbiddenException("Only owner or admin can grant access");
         }
         account.grantAccess(customerId);
-        accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.ACCESS_GRANTED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId(), customerId),
+                    saved.getId(),
+                    null,
+                    "Access granted to customer " + customerId + " for account: " + saved.getAccountNumber()
+            ));
+        }
     }
 
     public void revokeAccess(Long callerId, Long accountId, Long customerId) {
@@ -95,7 +130,19 @@ public class AccountService {
             throw new ForbiddenException("Only owner or admin can revoke access");
         }
         account.revokeAccess(customerId);
-        accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.ACCESS_REVOKED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId(), customerId),
+                    saved.getId(),
+                    null,
+                    "Access revoked from customer " + customerId + " for account: " + saved.getAccountNumber()
+            ));
+        }
     }
 
     public void freeze(Long callerId, Long accountId) {
@@ -105,7 +152,19 @@ public class AccountService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new NotFoundException("Account not found with id: " + accountId));
         account.freeze();
-        accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.ACCOUNT_STATUS_CHANGED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId()),
+                    saved.getId(),
+                    null,
+                    "Account status changed to " + saved.getStatus() + " for account: " + saved.getAccountNumber()
+            ));
+        }
     }
 
     public void unfreeze(Long callerId, Long accountId) {
@@ -115,7 +174,19 @@ public class AccountService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new NotFoundException("Account not found with id: " + accountId));
         account.unfreeze();
-        accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.ACCOUNT_STATUS_CHANGED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId()),
+                    saved.getId(),
+                    null,
+                    "Account status changed to " + saved.getStatus() + " for account: " + saved.getAccountNumber()
+            ));
+        }
     }
 
     public void close(Long callerId, Long accountId) {
@@ -125,7 +196,19 @@ public class AccountService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new NotFoundException("Account not found with id: " + accountId));
         account.close();
-        accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.ACCOUNT_STATUS_CHANGED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId()),
+                    saved.getId(),
+                    null,
+                    "Account status changed to " + saved.getStatus() + " for account: " + saved.getAccountNumber()
+            ));
+        }
     }
 
     public void waiveFees(Long callerId, Long accountId) {
@@ -135,7 +218,19 @@ public class AccountService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new NotFoundException("Account not found with id: " + accountId));
         account.changeFeeStrategy(new NoFeeStrategy());
-        accountRepository.save(account);
+        Account saved = accountRepository.save(account);
+
+        if (publisher != null) {
+            publisher.publish(new BankingEvent(
+                    UUID.randomUUID(),
+                    EventType.FEE_POLICY_CHANGED,
+                    LocalDateTime.now(),
+                    List.of(saved.getOwnerId()),
+                    saved.getId(),
+                    null,
+                    "Fee policy changed to NoFeeStrategy for account: " + saved.getAccountNumber()
+            ));
+        }
     }
 
     @Transactional(readOnly = true)

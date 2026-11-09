@@ -2,6 +2,8 @@ package org.example.banking_system_sdt.account;
 
 import org.example.banking_system_sdt.customer.Customer;
 import org.example.banking_system_sdt.customer.CustomerService;
+import org.example.banking_system_sdt.event.BankingEvent;
+import org.example.banking_system_sdt.event.BankingEventPublisher;
 import org.example.banking_system_sdt.exception.ForbiddenException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,9 @@ class AccountServiceTest {
     private CustomerService customerService;
 
     @Mock
+    private BankingEventPublisher publisher;
+
+    @Mock
     private AccountRepository accountRepository;
 
     private AccountService accountService;
@@ -32,7 +37,7 @@ class AccountServiceTest {
     @BeforeEach
     void setUp() {
         List<AccountFactory> factories = List.of(new CheckingAccountFactory(), new SavingsAccountFactory());
-        accountService = new AccountService(factories, customerService, accountRepository);
+        accountService = new AccountService(factories, customerService, publisher, accountRepository);
     }
 
     @Test
@@ -48,6 +53,7 @@ class AccountServiceTest {
         assertEquals(AccountType.CHECKING, account.getType());
         assertEquals(new BigDecimal("100.00"), account.getBalance());
         verify(accountRepository).save(any(Account.class));
+        verify(publisher).publish(any(BankingEvent.class));
     }
 
     @Test
@@ -96,11 +102,13 @@ class AccountServiceTest {
         );
         when(customerService.isAdmin(1L)).thenReturn(true);
         when(accountRepository.findById(100L)).thenReturn(Optional.of(account));
+        when(accountRepository.save(any(Account.class))).thenAnswer(inv -> inv.getArgument(0));
 
         accountService.waiveFees(1L, 100L);
 
         assertInstanceOf(NoFeeStrategy.class, account.getFeeStrategy());
         verify(accountRepository).save(account);
+        verify(publisher).publish(any(BankingEvent.class));
 
         when(customerService.isAdmin(2L)).thenReturn(false);
         assertThrows(ForbiddenException.class, () -> accountService.waiveFees(2L, 100L));
