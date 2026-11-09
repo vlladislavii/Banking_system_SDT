@@ -38,6 +38,9 @@ SDT team project: a simplified Digital Banking System where customers manage ban
    - [Observer](#observer)
    - [How the patterns work together](#how-the-patterns-work-together)
 3. [TASK 3. UML class diagram](#task-3-uml-class-diagram)
+4. [TASK 4. UML sequence diagrams](#task-4-uml-sequence-diagrams)
+   - [Transfer funds](#transfer-funds)
+   - [Open an account](#open-an-account)
 
 ---
 
@@ -149,3 +152,30 @@ A single class diagram covers the whole system. The design patterns are integrat
 The web layer (REST controllers) and the persistence layer (repositories) are omitted to keep the diagram readable.
 
 PNG version: [class-diagram.png](docs/diagrams/class-diagram.png) · PlantUML source: [class-diagram.puml](docs/diagrams/class-diagram.puml)
+
+---
+
+## TASK 4. UML sequence diagrams
+
+The two diagrams show the main use cases of the system. Together they show all four design patterns at runtime, using the same classes and methods as the class diagram. Participants are grouped by package and colored by pattern, as in the class diagram.
+
+| Diagram | Use case | Patterns shown |
+|---------|----------|----------------|
+| [Transfer funds](#transfer-funds) | A customer transfers money from one account to another | Chain of Responsibility, Strategy, Observer |
+| [Open an account](#open-an-account) | A customer opens a new checking account | Factory Method, Strategy, Observer |
+
+### Transfer funds
+
+`TransferService` creates a pending transaction and loads both accounts and the fee through `AccountClient`; the fee is calculated by the source account's fee strategy. The transfer then passes through all seven validation handlers. If it is valid, the debit, the credit and the fee are applied in one atomic operation and the transaction is marked as successful; otherwise it is marked as rejected. In both cases an event is published and the observers record it in the audit log and notify the customers.
+
+![Transfer funds sequence diagram](docs/diagrams/sequence-transfer.svg)
+
+PNG version: [sequence-transfer.png](docs/diagrams/sequence-transfer.png) · PlantUML source: [sequence-transfer.puml](docs/diagrams/sequence-transfer.puml)
+
+### Open an account
+
+`AccountService` checks the owner and the caller, then selects the factory for the requested account type. `CheckingAccountFactory` validates the initial deposit, generates the account number and, through the factory method `createAccount()`, creates the account together with its fee strategy. The initial deposit is credited, and an `ACCOUNT_OPENED` event notifies the owner and is recorded in the audit log.
+
+![Open an account sequence diagram](docs/diagrams/sequence-open-account.svg)
+
+PNG version: [sequence-open-account.png](docs/diagrams/sequence-open-account.png) · PlantUML source: [sequence-open-account.puml](docs/diagrams/sequence-open-account.puml)

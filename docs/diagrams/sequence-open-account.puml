@@ -1,0 +1,131 @@
+@startuml sequence-open-account
+title Open a checking account - Sequence Diagram
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 260
+skinparam sequence {
+  ParticipantBorderColor #555555
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #555555
+  ActorBackgroundColor #FFFFFF
+  LifeLineBorderColor #888888
+  ArrowColor #444444
+  BoxBorderColor #999999
+  GroupBorderColor #777777
+}
+skinparam note {
+  BorderColor #777777
+  BackgroundColor #FFFFF0
+}
+
+autonumber
+autoactivate on
+
+actor Customer
+
+box "account" #F7F7F7
+  participant ":AccountService" as AS
+  participant ":CheckingAccountFactory" as CAF #DDEBF7
+  participant "feeStrategy : FixedFeeStrategy" as FFS #FCE4D6
+  participant "account : CheckingAccount" as Acc
+end box
+
+box "customer" #F7F7F7
+  participant ":CustomerService" as CS
+end box
+
+box "event" #F7F7F7
+  participant ":BankingEventPublisher" as Pub #E4DFEC
+  participant ":AuditLogObserver" as Audit #E4DFEC
+  participant ":AuditLog" as Log
+end box
+
+box "notification" #F7F7F7
+  participant ":CustomerNotificationObserver" as CNO #E4DFEC
+  participant ":NotificationService" as NS
+  participant ":Notification" as N
+end box
+
+Customer -> AS : openAccount(callerId, ownerId, CHECKING, initialDeposit)
+
+== Check the owner and the caller ==
+
+AS -> CS : getProfile(callerId, ownerId)
+return owner : Customer
+note right of CS
+  Fails if the owner does not exist, or if the
+  caller is neither the owner nor an administrator
+end note
+
+== Create the account (Factory Method) ==
+
+AS -> AS : factories.get(CHECKING)
+return factory : AccountFactory
+
+AS -> CAF : openAccount(ownerId, initialDeposit)
+
+CAF -> CAF : minimumInitialDeposit()
+return 0
+break initialDeposit < minimumInitialDeposit()
+  note over AS, CAF : an exception is thrown (initial deposit too low)\nand no account is created
+end
+
+CAF -> CAF : nextAccountNumber()
+CAF -> CAF : accountPrefix()
+return "CHK-"
+return accountNumber
+
+CAF -> CAF : createAccount(ownerId, accountNumber)
+create FFS
+CAF -> FFS : <<create>> (fee = 1.00)
+return
+create Acc
+CAF -> Acc : <<create>> (ownerId, accountNumber, overdraftLimit = 500,\ndailyTransferLimit = 5000, feeStrategy, status = ACTIVE)
+return
+return account : Account
+
+CAF -> Acc : credit(initialDeposit)
+return
+return account : Account
+
+note over AS, Acc #DDEBF7
+  <b>Factory Method</b>: AccountService only knows the abstract AccountFactory.
+  openAccount() holds the shared steps; the factory method createAccount() is
+  implemented by CheckingAccountFactory, which decides the account class, its
+  limits and its fee strategy (<b>Strategy</b>). A savings account follows the same
+  flow with SavingsAccountFactory: prefix "SAV-", minimum deposit 100,
+  PercentageFeeStrategy and no overdraft.
+end note
+
+== Notify (Observer) ==
+
+AS -> Pub : publish(event : BankingEvent)
+note right of AS
+  event type: ACCOUNT_OPENED
+  recipient: the owner
+end note
+
+Pub -> Audit : onEvent(event)
+Audit -> Log : record(event)
+return
+return
+
+Pub -> CNO : onEvent(event)
+CNO -> NS : create(ownerId, ACCOUNT_OPENED, message)
+create N
+NS -> N : <<create>>
+return
+return notification
+return
+
+note over Pub, N #E4DFEC
+  <b>Observer</b>: the publisher calls onEvent() on every subscribed observer.
+  AccountService does not know which observers exist.
+end note
+
+return
+
+return account
+
+@enduml

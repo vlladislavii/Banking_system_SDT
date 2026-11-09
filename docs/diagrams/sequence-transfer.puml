@@ -1,0 +1,194 @@
+@startuml sequence-transfer
+title Transfer funds - Sequence Diagram
+
+skinparam shadowing false
+skinparam sequenceMessageAlign center
+skinparam maxMessageSize 260
+skinparam BoxPadding 8
+skinparam sequence {
+  ParticipantBorderColor #555555
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #555555
+  ActorBackgroundColor #FFFFFF
+  LifeLineBorderColor #888888
+  ArrowColor #444444
+  BoxBorderColor #999999
+  GroupBorderColor #777777
+}
+skinparam note {
+  BorderColor #777777
+  BackgroundColor #FFFFF0
+}
+
+autonumber
+autoactivate on
+
+actor Customer
+
+box "transaction" #F7F7F7
+  participant ":TransferService" as TS
+  participant ":Transaction" as Tx
+  participant ":PositiveAmountHandler" as H1 #E2F0D9
+  participant ":DifferentAccountsHandler" as H2 #E2F0D9
+  participant ":AccountExistenceHandler" as H3 #E2F0D9
+  participant ":AuthorizationHandler" as H4 #E2F0D9
+  participant ":AccountStatusHandler" as H5 #E2F0D9
+  participant ":SufficientFundsHandler" as H6 #E2F0D9
+  participant ":DailyLimitHandler" as H7 #E2F0D9
+  participant ":LocalAccountClient" as LAC
+end box
+
+box "account" #F7F7F7
+  participant ":AccountService" as AS
+  participant "source : Account" as Src
+  participant "feeStrategy : FeeStrategy" as FS #FCE4D6
+  participant "target : Account" as Tgt
+  participant "bankFeeAccount : Account" as Bank
+end box
+
+box "event" #F7F7F7
+  participant ":BankingEventPublisher" as Pub #E4DFEC
+  participant ":AuditLogObserver" as Audit #E4DFEC
+  participant ":AuditLog" as Log
+end box
+
+box "notification" #F7F7F7
+  participant ":CustomerNotificationObserver" as CNO #E4DFEC
+  participant ":NotificationService" as NS
+end box
+
+Customer -> TS : transfer(request : TransferRequest)
+
+create Tx
+TS -> Tx : <<create>>
+return transaction (status = PENDING)
+
+== Build the transfer context ==
+
+loop for sourceAccountId and targetAccountId
+  TS -> LAC : getAccount(accountId)
+  LAC -> AS : findAccount(accountId)
+  return Optional<Account>
+  return Optional<AccountSnapshot>
+end
+note right of LAC
+  Builds a read-only AccountSnapshot:
+  owner, authorized customers, canSend,
+  canReceive, availableToSpend, dailyTransferLimit
+end note
+
+opt source account exists
+  TS -> LAC : quoteFee(sourceAccountId, amount)
+  LAC -> AS : quoteFee(sourceAccountId, amount)
+  AS -> Src : calculateFee(amount)
+  Src -> FS : calculateFee(amount)
+  return fee
+  return fee
+  return fee
+  return fee
+end
+note right of FS #FCE4D6
+  <b>Strategy</b>: the account delegates to its
+  FixedFeeStrategy, PercentageFeeStrategy
+  or NoFeeStrategy
+end note
+
+note over TS
+  context = TransferContext(request, source, target,
+  fee, sentToday from the transaction history)
+end note
+
+== Validate (Chain of Responsibility) ==
+
+TS -> H1 : validate(context)
+H1 -> H1 : check(context)
+return ok
+H1 -> H2 : validate(context)
+H2 -> H2 : check(context)
+return ok
+H2 -> H3 : validate(context)
+H3 -> H3 : check(context)
+return ok
+H3 -> H4 : validate(context)
+H4 -> H4 : check(context)
+return ok
+H4 -> H5 : validate(context)
+H5 -> H5 : check(context)
+return ok
+H5 -> H6 : validate(context)
+H6 -> H6 : check(context)
+return ok
+H6 -> H7 : validate(context)
+H7 -> H7 : check(context)
+return ok
+return result
+return result
+return result
+return result
+return result
+return result
+return result : ValidationResult
+
+note over H1, H7 #E2F0D9
+  <b>Chain of Responsibility</b>: each handler runs its own check and passes the
+  context to the next handler. If a check fails, that handler returns
+  ValidationResult.rejected(reason) at once and the rest of the chain is skipped.
+end note
+
+== Execute ==
+
+alt result is valid
+  TS -> LAC : applyTransfer(sourceAccountId, targetAccountId, amount, fee)
+  LAC -> AS : applyTransfer(sourceAccountId, targetAccountId, amount, fee)
+  group one atomic database transaction
+    AS -> Src : debit(amount + fee)
+    return
+    AS -> Tgt : credit(amount)
+    return
+    AS -> Bank : credit(fee)
+    return
+  end
+  return
+  return
+  note right of AS
+    debit() re-checks the balance; if the account
+    was changed concurrently (optimistic locking),
+    nothing is applied and the transfer is rejected
+  end note
+  TS -> Tx : markSuccessful(fee)
+  return
+else result is rejected
+  TS -> Tx : markRejected(reason)
+  return
+end
+
+== Notify (Observer) ==
+
+TS -> Pub : publish(event : BankingEvent)
+note right of TS
+  event type: TRANSFER_COMPLETED
+  or TRANSFER_REJECTED
+end note
+
+Pub -> Audit : onEvent(event)
+Audit -> Log : record(event)
+return
+return
+
+Pub -> CNO : onEvent(event)
+loop for each recipient of the event
+  CNO -> NS : create(recipientId, type, message)
+  return notification
+end
+return
+
+note over Pub, NS #E4DFEC
+  <b>Observer</b>: the publisher calls onEvent() on every subscribed observer.
+  The transfer code does not know which observers exist.
+end note
+
+return
+
+return transaction
+
+@enduml

@@ -169,6 +169,7 @@ package "account" {
     - publisher : BankingEventPublisher
     + openAccount(callerId : Long, ownerId : Long, type : AccountType, initialDeposit : BigDecimal) : Account
     + getAccount(callerId : Long, accountId : Long) : Account
+    + findAccount(accountId : Long) : Optional<Account>
     + getBalance(callerId : Long, accountId : Long) : BigDecimal
     + listCustomerAccounts(callerId : Long, customerId : Long) : List<Account>
     + grantAccess(callerId : Long, accountId : Long, customerId : Long) : void
