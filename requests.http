@@ -1,0 +1,190 @@
+### ==============================================================================
+### Digital Banking System - Demonstration HTTP Requests
+### ==============================================================================
+### Use in IntelliJ IDEA HTTP Client or VS Code REST Client.
+### Ensure the application is running: ./mvnw spring-boot:run
+### ==============================================================================
+
+@host = http://localhost:8080
+@adminId = 1
+
+### ------------------------------------------------------------------------------
+### 1. Register Customers
+### ------------------------------------------------------------------------------
+
+### 1.1 Register Customer Alice (assigned ID 2 on fresh start)
+POST {{host}}/api/customers
+Content-Type: application/json
+
+{
+  "fullName": "Alice Smith",
+  "email": "alice@bank.com",
+  "phone": "+380501234567",
+  "address": "123 Main Street, Kyiv"
+}
+
+### 1.2 Register Customer Bob (assigned ID 3 on fresh start)
+POST {{host}}/api/customers
+Content-Type: application/json
+
+{
+  "fullName": "Bob Jones",
+  "email": "bob@bank.com",
+  "phone": "+380509876543",
+  "address": "456 Oak Avenue, Lviv"
+}
+
+### ------------------------------------------------------------------------------
+### 2. Open Accounts (Factory Method & Strategy & Observer)
+### ------------------------------------------------------------------------------
+
+### 2.1 Open Checking Account for Alice (Factory: CheckingAccountFactory, Strategy: FixedFeeStrategy)
+### Initial deposit: 500.00 EUR. System fee account gets created at startup (ID 1, CHK-SYSTEM-FEE).
+POST {{host}}/api/accounts
+X-User-Id: 2
+Content-Type: application/json
+
+{
+  "ownerId": 2,
+  "type": "CHECKING",
+  "initialDeposit": 500.00
+}
+
+### 2.2 Open Savings Account for Bob (Factory: SavingsAccountFactory, Strategy: PercentageFeeStrategy)
+### Initial deposit: 200.00 EUR.
+POST {{host}}/api/accounts
+X-User-Id: 3
+Content-Type: application/json
+
+{
+  "ownerId": 3,
+  "type": "SAVINGS",
+  "initialDeposit": 200.00
+}
+
+### ------------------------------------------------------------------------------
+### 3. Check Initial Balances
+### ------------------------------------------------------------------------------
+
+### 3.1 Check Alice's Initial Balance (Expected: 500.00 EUR)
+GET {{host}}/api/accounts/2/balance
+X-User-Id: 2
+
+### 3.2 Check Bob's Initial Balance (Expected: 200.00 EUR)
+GET {{host}}/api/accounts/3/balance
+X-User-Id: 3
+
+### ------------------------------------------------------------------------------
+### 4. Successful Transfer (Chain of Responsibility + Strategy + Observer)
+### ------------------------------------------------------------------------------
+
+### 4.1 Transfer 100 EUR from Alice (Checking) to Bob (Savings)
+### Checking fixed fee = 1.00 EUR.
+### Total debited from Alice: 101.00 EUR. Credited to Bob: 100.00 EUR. Bank fee account: +1.00 EUR.
+POST {{host}}/api/transactions/transfer
+X-User-Id: 2
+Content-Type: application/json
+
+{
+  "sourceAccountId": 2,
+  "targetAccountId": 3,
+  "amount": 100.00
+}
+
+### 4.2 Verify Alice's Balance after Transfer (Expected: 399.00 EUR)
+GET {{host}}/api/accounts/2/balance
+X-User-Id: 2
+
+### 4.3 Verify Bob's Balance after Transfer (Expected: 300.00 EUR)
+GET {{host}}/api/accounts/3/balance
+X-User-Id: 3
+
+### ------------------------------------------------------------------------------
+### 5. Rejected Transfer (Chain of Responsibility: SufficientFundsHandler)
+### ------------------------------------------------------------------------------
+
+### 5.1 Transfer 1000 EUR from Alice to Bob (Fails: balance 399.00 < 1001.00)
+### Returns HTTP 200 with status: "REJECTED" and clear business reason.
+POST {{host}}/api/transactions/transfer
+X-User-Id: 2
+Content-Type: application/json
+
+{
+  "sourceAccountId": 2,
+  "targetAccountId": 3,
+  "amount": 1000.00
+}
+
+### 5.2 Verify Alice's Balance is Unchanged (Expected: 399.00 EUR)
+GET {{host}}/api/accounts/2/balance
+X-User-Id: 2
+
+### ------------------------------------------------------------------------------
+### 6. Admin Waives Fees (Runtime Strategy Swap & Observer)
+### ------------------------------------------------------------------------------
+
+### 6.1 Admin waives fees on Alice's Checking Account
+### Swaps FixedFeeStrategy -> NoFeeStrategy; publishes FEE_POLICY_CHANGED
+POST {{host}}/api/accounts/2/waive-fees
+X-User-Id: {{adminId}}
+
+### 6.2 View Alice's Account details (feeStrategy is now "NoFeeStrategy")
+GET {{host}}/api/accounts/2
+X-User-Id: 2
+
+### ------------------------------------------------------------------------------
+### 7. Second Transfer with Waived Fee (0.00 Fee)
+### ------------------------------------------------------------------------------
+
+### 7.1 Transfer 100 EUR from Alice to Bob again (Fee: 0.00 EUR)
+### Alice debited: 100.00 EUR. Bob credited: 100.00 EUR.
+POST {{host}}/api/transactions/transfer
+X-User-Id: 2
+Content-Type: application/json
+
+{
+  "sourceAccountId": 2,
+  "targetAccountId": 3,
+  "amount": 100.00
+}
+
+### 7.2 Verify Alice's Final Balance (Expected: 299.00 EUR)
+GET {{host}}/api/accounts/2/balance
+X-User-Id: 2
+
+### 7.3 Verify Bob's Final Balance (Expected: 400.00 EUR)
+GET {{host}}/api/accounts/3/balance
+X-User-Id: 3
+
+### ------------------------------------------------------------------------------
+### 8. Notifications and Audit Monitoring (Observer Pattern)
+### ------------------------------------------------------------------------------
+
+### 8.1 View Alice's Notifications (Account opened, transfer sent, transfer rejected, fees waived, transfer sent)
+GET {{host}}/api/notifications?customerId=2
+X-User-Id: 2
+
+### 8.2 Mark Alice's first notification as read
+PUT {{host}}/api/notifications/1/read
+X-User-Id: 2
+
+### 8.3 View Bob's Notifications (Account opened, transfers received)
+GET {{host}}/api/notifications?customerId=3
+X-User-Id: 3
+
+### 8.4 View Transaction History for Alice's Account
+GET {{host}}/api/transactions/history/2
+X-User-Id: 2
+
+### 8.5 Admin views System Audit Log (Recorded by AuditLogObserver)
+GET {{host}}/api/audit-log
+X-User-Id: {{adminId}}
+
+### 8.6 Admin Searches all Transactions across the Bank
+POST {{host}}/api/transactions/search
+X-User-Id: {{adminId}}
+Content-Type: application/json
+
+{
+  "status": null
+}

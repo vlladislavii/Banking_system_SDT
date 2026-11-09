@@ -41,6 +41,11 @@ SDT team project: a simplified Digital Banking System where customers manage ban
 4. [TASK 4. UML sequence diagrams](#task-4-uml-sequence-diagrams)
    - [Transfer funds](#transfer-funds)
    - [Open an account](#open-an-account)
+5. [TASK 5. Proof of concept](#task-5-proof-of-concept)
+   - [Design patterns implemented](#design-patterns-implemented)
+   - [How to run the application and tests](#how-to-run-the-application-and-tests)
+   - [Demo scenario](#demo-scenario)
+   - [How the patterns work together in the code](#how-the-patterns-work-together-in-the-code)
 
 ---
 
@@ -179,3 +184,91 @@ PNG version: [sequence-transfer.png](docs/diagrams/sequence-transfer.png) · Pla
 ![Open an account sequence diagram](docs/diagrams/sequence-open-account.svg)
 
 PNG version: [sequence-open-account.png](docs/diagrams/sequence-open-account.png) · PlantUML source: [sequence-open-account.puml](docs/diagrams/sequence-open-account.puml)
+
+---
+
+## TASK 5. Proof of concept
+
+A working Java 21 / Spring Boot 4 proof of concept implementing the full domain model from [docs/diagrams/class-diagram.puml](docs/diagrams/class-diagram.puml) and runtime interactions from the sequence diagrams.
+
+### Design patterns implemented
+
+| Pattern | Implemented Classes / Interfaces | Source File Links |
+|---|---|---|
+| **Factory Method** | `AccountFactory`<br>`CheckingAccountFactory`<br>`SavingsAccountFactory`<br>`Account`<br>`CheckingAccount`<br>`SavingsAccount` | [`AccountFactory.java`](src/main/java/org/example/banking_system_sdt/account/AccountFactory.java)<br>[`CheckingAccountFactory.java`](src/main/java/org/example/banking_system_sdt/account/CheckingAccountFactory.java)<br>[`SavingsAccountFactory.java`](src/main/java/org/example/banking_system_sdt/account/SavingsAccountFactory.java)<br>[`Account.java`](src/main/java/org/example/banking_system_sdt/account/Account.java)<br>[`CheckingAccount.java`](src/main/java/org/example/banking_system_sdt/account/CheckingAccount.java)<br>[`SavingsAccount.java`](src/main/java/org/example/banking_system_sdt/account/SavingsAccount.java) |
+| **Strategy** | `FeeStrategy`<br>`FixedFeeStrategy`<br>`PercentageFeeStrategy`<br>`NoFeeStrategy`<br>`FeeStrategyConverter` | [`FeeStrategy.java`](src/main/java/org/example/banking_system_sdt/account/FeeStrategy.java)<br>[`FixedFeeStrategy.java`](src/main/java/org/example/banking_system_sdt/account/FixedFeeStrategy.java)<br>[`PercentageFeeStrategy.java`](src/main/java/org/example/banking_system_sdt/account/PercentageFeeStrategy.java)<br>[`NoFeeStrategy.java`](src/main/java/org/example/banking_system_sdt/account/NoFeeStrategy.java)<br>[`FeeStrategyConverter.java`](src/main/java/org/example/banking_system_sdt/account/FeeStrategyConverter.java) |
+| **Observer** | `BankingEventPublisher`<br>`BankingEventObserver`<br>`BankingEvent`<br>`EventType`<br>`AuditLogObserver`<br>`AuditLog`<br>`CustomerNotificationObserver`<br>`NotificationService` | [`BankingEventPublisher.java`](src/main/java/org/example/banking_system_sdt/event/BankingEventPublisher.java)<br>[`BankingEventObserver.java`](src/main/java/org/example/banking_system_sdt/event/BankingEventObserver.java)<br>[`BankingEvent.java`](src/main/java/org/example/banking_system_sdt/event/BankingEvent.java)<br>[`EventType.java`](src/main/java/org/example/banking_system_sdt/event/EventType.java)<br>[`AuditLogObserver.java`](src/main/java/org/example/banking_system_sdt/event/AuditLogObserver.java)<br>[`AuditLog.java`](src/main/java/org/example/banking_system_sdt/event/AuditLog.java)<br>[`CustomerNotificationObserver.java`](src/main/java/org/example/banking_system_sdt/notification/CustomerNotificationObserver.java)<br>[`NotificationService.java`](src/main/java/org/example/banking_system_sdt/notification/NotificationService.java) |
+| **Chain of Responsibility** | `TransferValidationHandler`<br>`PositiveAmountHandler`<br>`DifferentAccountsHandler`<br>`AccountExistenceHandler`<br>`AuthorizationHandler`<br>`AccountStatusHandler`<br>`SufficientFundsHandler`<br>`DailyLimitHandler`<br>`TransferValidationConfig`<br>`TransferContext`<br>`ValidationResult` | [`TransferValidationHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/TransferValidationHandler.java)<br>[`PositiveAmountHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/PositiveAmountHandler.java)<br>[`DifferentAccountsHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/DifferentAccountsHandler.java)<br>[`AccountExistenceHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/AccountExistenceHandler.java)<br>[`AuthorizationHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/AuthorizationHandler.java)<br>[`AccountStatusHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/AccountStatusHandler.java)<br>[`SufficientFundsHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/SufficientFundsHandler.java)<br>[`DailyLimitHandler.java`](src/main/java/org/example/banking_system_sdt/transaction/DailyLimitHandler.java)<br>[`TransferValidationConfig.java`](src/main/java/org/example/banking_system_sdt/transaction/TransferValidationConfig.java)<br>[`TransferContext.java`](src/main/java/org/example/banking_system_sdt/transaction/TransferContext.java)<br>[`ValidationResult.java`](src/main/java/org/example/banking_system_sdt/transaction/ValidationResult.java) |
+
+### How to run the application and tests
+
+#### Requirements
+- Java 21 SDK
+- Maven wrapper included in repository (`./mvnw`)
+
+#### Run the application
+```bash
+./mvnw spring-boot:run
+```
+The server starts at `http://localhost:8080`. An H2 in-memory database is initialized with default system administrator (`admin@bank.com`) and system fee account (`CHK-SYSTEM-FEE`).
+
+#### Run the test suite
+```bash
+./mvnw clean verify
+```
+Runs all 63 unit and integration tests, including isolated pattern tests (without Spring context) and the complete end-to-end integration test (`TransferEndToEndIntegrationTest`).
+
+### Demo scenario
+
+The full end-to-end banking flow is executable via [`requests.http`](requests.http) in IntelliJ IDEA or VS Code REST Client:
+
+1. **Register Customers**: Register Alice (`POST /api/customers`) and Bob (`POST /api/customers`).
+2. **Open Accounts**:
+   - Alice opens a `CHECKING` account with 500.00 EUR initial deposit (built via `CheckingAccountFactory`, equipped with `FixedFeeStrategy` 1.00 EUR).
+   - Bob opens a `SAVINGS` account with 200.00 EUR initial deposit (built via `SavingsAccountFactory`, equipped with `PercentageFeeStrategy` 1.5%).
+   - Both account creations trigger `ACCOUNT_OPENED` events, creating in-app customer notifications and audit log entries.
+3. **Successful Transfer**:
+   - Alice initiates a 100.00 EUR transfer to Bob (`POST /api/transactions/transfer`).
+   - The **Chain of Responsibility** verifies the 7 invariant checks (amount positive, distinct accounts, existence, authorization, active status, sufficient funds, daily limit).
+   - The **Strategy** calculates the 1.00 EUR fixed fee on checking transfers.
+   - Balances updated atomically: Alice balance = 399.00 EUR (100 + 1 fee debited), Bob balance = 300.00 EUR (+100 credited), system fee account credited 1.00 EUR.
+   - **Observer** publishes `TRANSFER_COMPLETED`: Alice receives a debit notification, Bob receives a credit notification, and an audit log entry is recorded.
+4. **Rejected Transfer (Insufficient Funds)**:
+   - Alice attempts to transfer 1000.00 EUR to Bob.
+   - `SufficientFundsHandler` detects available balance (399.00 EUR) is insufficient for amount + fee (1001.00 EUR) and halts the chain.
+   - HTTP 200 response returned with `status = REJECTED` and explanatory message.
+   - `TRANSFER_REJECTED` event published, notifying Alice and updating the audit log.
+5. **Runtime Strategy Swap (Waive Fees)**:
+   - System administrator waives fees on Alice's checking account (`POST /api/accounts/{id}/waive-fees`).
+   - Alice's `FeeStrategy` is swapped from `FixedFeeStrategy` to `NoFeeStrategy`.
+   - `FEE_POLICY_CHANGED` event published, notifying Alice.
+6. **Transfer with Waived Fee**:
+   - Alice transfers 100.00 EUR to Bob again.
+   - `NoFeeStrategy` computes fee = 0.00 EUR. Alice is debited exactly 100.00 EUR (final balance: 299.00 EUR), Bob is credited 100.00 EUR (final balance: 400.00 EUR).
+7. **Inspect Notifications and Audit Log**:
+   - Alice queries her notifications (`GET /api/notifications?customerId=2`).
+   - Administrator queries the full system audit log (`GET /api/audit-log`).
+
+### How the patterns work together in the code
+
+The 4 design patterns cooperate during account creation and transaction execution:
+
+1. **Factory Method (`account` package)**:
+   When `AccountService.openAccount(...)` is called, it resolves the appropriate `AccountFactory` implementation (`CheckingAccountFactory` or `SavingsAccountFactory`). The factory validates type-specific constraints (e.g. minimum deposit), generates the formatted account number (`CHK-...` or `SAV-...`), configures limits (overdraft, interest, daily transfer limits), and attaches the appropriate default `FeeStrategy`.
+
+2. **Strategy (`account` package)**:
+   The `Account` entity holds a `FeeStrategy` reference (persisted cleanly via `FeeStrategyConverter`). During transfers, `TransferService` delegates fee computation to `sourceAccount.calculateFee(amount)` without conditional branching on account types. Furthermore, runtime policy changes (such as admin fee waivers) simply swap the strategy instance on the account.
+
+3. **Chain of Responsibility (`transaction` package)**:
+   When `TransferService.transfer(...)` is called:
+   - The transaction is initially persisted as `PENDING`.
+   - A `TransferContext` snapshot is created.
+   - The request flows through the configured validation chain: `PositiveAmountHandler` ➔ `DifferentAccountsHandler` ➔ `AccountExistenceHandler` ➔ `AuthorizationHandler` ➔ `AccountStatusHandler` ➔ `SufficientFundsHandler` ➔ `DailyLimitHandler`.
+   - If any check fails, the handler halts processing and returns `ValidationResult.rejected(...)`.
+   - If all handlers pass, `TransferService` triggers `accountClient.applyTransfer(...)` atomically.
+
+4. **Observer (`event` & `notification` packages)**:
+   Upon transaction completion or rejection, `TransferService` publishes a `BankingEvent` via `BankingEventPublisher`. The publisher notifies all registered `BankingEventObserver`s:
+   - `AuditLogObserver`: Appends an immutable audit record to the admin-accessible `AuditLog`.
+   - `CustomerNotificationObserver`: Creates and persists unread `Notification` records for affected customers.
+   - Observers execute with isolated error handling, guaranteeing that a notification failure will never roll back or abort the banking transaction.
