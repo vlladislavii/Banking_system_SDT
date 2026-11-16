@@ -1,0 +1,92 @@
+@startuml arch-event-driven-component
+title Event-Driven Architecture (Choreographed Saga) - Component Diagram
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle frame
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam queue {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+
+package "transaction-service" {
+  component "TransferController" as TxCtrl
+  component "TransferSagaCoordinator" as SagaTx
+  component "PreCheckChain\n(Amount / SameAccount)" as PreChain #E2F0D9
+  component "TransactionQueryService" as TQS
+
+  TxCtrl --> SagaTx
+  TxCtrl --> TQS
+  SagaTx --> PreChain
+}
+
+package "account-service" {
+  component "AccountController" as AccCtrl
+  component "AccountService" as AS
+  component "AccountFactory" as AF #DDEBF7
+  component "FeeStrategy" as FS #FCE4D6
+  component "LedgerValidationChain\n(Auth / Status / Funds / Limit)" as AccChain #E2F0D9
+  component "TransferEventHandler" as AccHandler #E4DFEC
+
+  AccCtrl --> AS
+  AS --> AF
+  AS --> FS
+  AccHandler --> AccChain
+  AccHandler --> AS
+}
+
+package "notification-service" {
+  component "NotificationController" as NotifCtrl
+  component "NotificationService" as NS
+  component "CustomerNotificationObserver" as CNO #E4DFEC
+
+  NotifCtrl --> NS
+  CNO --> NS
+}
+
+package "audit-service" {
+  component "AuditController" as AuditCtrl
+  component "AuditLogObserver" as ALO #E4DFEC
+  component "AuditLog" as AL
+
+  AuditCtrl --> AL
+  ALO --> AL
+}
+
+queue "Event Broker (RabbitMQ / Kafka)\nTopics: TransferRequested, FundsReserved,\nTransferRejected, TransferCompleted" as Broker
+
+database "transaction_db" as TxDB
+database "account_db" as AccDB
+database "notification_db" as NotifDB
+database "audit_db" as AuditDB
+
+SagaTx --> Broker : 1. publish TransferRequested
+Broker --> AccHandler : 2. consume TransferRequested
+AccHandler --> Broker : 3. publish FundsReserved /\nTransferRejected
+Broker --> SagaTx : 4. consume outcome &\npublish TransferCompleted
+Broker --> CNO : 5. consume BankingEvent
+Broker --> ALO : 5. consume BankingEvent
+
+SagaTx --> TxDB : JPA
+TQS --> TxDB : JPA
+AS --> AccDB : JPA
+NS --> NotifDB : JPA
+AL --> AuditDB : JPA
+
+legend right
+  |= Color |= Design pattern |
+  |<back:#DDEBF7>          </back>| Factory Method |
+  |<back:#E2F0D9>          </back>| Chain of Responsibility |
+  |<back:#FCE4D6>          </back>| Strategy |
+  |<back:#E4DFEC>          </back>| Observer |
+endlegend
+
+@enduml

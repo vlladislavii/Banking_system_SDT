@@ -1,0 +1,61 @@
+@startuml arch-microservices-deployment
+title Microservices Architecture - Deployment Diagram
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 35
+skinparam ranksep 45
+skinparam node {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam artifact {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+
+node "Client Device\n<<device>>" as Client {
+  artifact "Web / REST Client"
+}
+
+node "Docker Host / Container Environment\n<<execution environment>>" as DockerHost {
+
+  node "account-container (:8081)\n<<Docker container>>" as AccNode {
+    artifact "account-service.jar"
+  }
+
+  node "transaction-container (:8082)\n<<Docker container>>" as TxNode {
+    artifact "transaction-service.jar"
+  }
+
+  node "notification-container (:8083)\n<<Docker container>>" as NotifNode {
+    artifact "notification-service.jar"
+  }
+
+  node "rabbitmq-container (:5672)\n<<Docker container>>" as MQNode {
+    artifact "RabbitMQ Broker"
+  }
+
+  database "account_db\n(H2 / PostgreSQL)" as AccDB
+  database "transaction_db\n(H2 / PostgreSQL)" as TxDB
+  database "notification_db\n(H2 / PostgreSQL)" as NotifDB
+}
+
+Client -- AccNode : <<HTTP / REST>>
+Client -- TxNode : <<HTTP / REST>>
+Client -- NotifNode : <<HTTP / REST>>
+
+TxNode -left- AccNode : <<HTTP / REST>>
+AccNode -- MQNode : <<AMQP>>
+TxNode -- MQNode : <<AMQP>>
+MQNode -- NotifNode : <<AMQP>>
+
+AccNode -- AccDB : <<JDBC>>
+TxNode -- TxDB : <<JDBC>>
+NotifNode -- NotifDB : <<JDBC>>
+
+@enduml

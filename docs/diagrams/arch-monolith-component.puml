@@ -1,0 +1,91 @@
+@startuml arch-monolith-component
+title Monolithic Architecture - Component Diagram
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle frame
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+
+package "Digital Banking System (Spring Boot Monolith)" {
+
+  component "REST API Controllers" as API
+
+  package "customer" {
+    component "CustomerService" as CS
+  }
+
+  package "account" {
+    component "AccountService" as AS
+    component "AccountFactory\n(Checking / Savings)" as AF #DDEBF7
+    component "FeeStrategy\n(Fixed / Percentage / NoFee)" as FS #FCE4D6
+  }
+
+  package "transaction" {
+    component "TransferService" as TS
+    component "TransactionQueryService" as TQS
+    component "TransferValidationHandler\n(7-step chain)" as TVH #E2F0D9
+    component "LocalAccountClient" as LAC
+  }
+
+  package "event" {
+    component "BankingEventPublisher" as BEP #E4DFEC
+    component "AuditLogObserver" as ALO #E4DFEC
+  }
+
+  package "notification" {
+    component "NotificationService" as NS
+    component "CustomerNotificationObserver" as CNO #E4DFEC
+  }
+
+  interface "AccountClient" as IAccountClient
+
+  API --> CS
+  API --> AS
+  API --> TS
+  API --> TQS
+  API --> NS
+
+  AS --> CS
+  AS --> AF
+  AS --> FS
+  AS --> BEP
+
+  TS --> TVH
+  TS --> BEP
+  TS ..> IAccountClient : <<use>>
+  TQS ..> IAccountClient : <<use>>
+
+  LAC -up- IAccountClient
+  LAC --> AS
+  LAC --> CS
+
+  BEP --> ALO
+  BEP --> CNO
+  CNO --> NS
+}
+
+database "Banking Database\n(H2 / PostgreSQL)" as DB
+
+CS --> DB : JDBC / JPA
+AS --> DB : JDBC / JPA
+TS --> DB : JDBC / JPA
+TQS --> DB : JDBC / JPA
+NS --> DB : JDBC / JPA
+ALO --> DB : JDBC / JPA
+
+legend right
+  |= Color |= Design pattern |
+  |<back:#DDEBF7>          </back>| Factory Method |
+  |<back:#E2F0D9>          </back>| Chain of Responsibility |
+  |<back:#FCE4D6>          </back>| Strategy |
+  |<back:#E4DFEC>          </back>| Observer |
+endlegend
+
+@enduml

@@ -1,0 +1,99 @@
+@startuml arch-microservices-component
+title Microservices Architecture - Component Diagram
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam packageStyle frame
+skinparam component {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam queue {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+
+package "account-service (:8081)" {
+  component "Account & Customer\nREST Controllers" as AccAPI
+  component "CustomerService" as CS
+  component "AccountService" as AS
+  component "AccountFactory" as AF #DDEBF7
+  component "FeeStrategy" as FS #FCE4D6
+  component "BankingEventPublisher" as AccPub #E4DFEC
+  component "MessageQueueEventObserver" as AccMQObs #E4DFEC
+
+  AccAPI --> CS
+  AccAPI --> AS
+  AS --> CS
+  AS --> AF
+  AS --> FS
+  AS --> AccPub
+  AccPub --> AccMQObs
+}
+
+package "transaction-service (:8082)" {
+  component "Transaction\nREST Controllers" as TxAPI
+  component "TransferService" as TS
+  component "TransactionQueryService" as TQS
+  component "TransferValidationHandler" as TVH #E2F0D9
+  component "RestAccountClient\n<<Adapter>>" as RAC
+  component "BankingEventPublisher" as TxPub #E4DFEC
+  component "MessageQueueEventObserver" as TxMQObs #E4DFEC
+
+  interface "AccountClient" as IAccountClient
+
+  TxAPI --> TS
+  TxAPI --> TQS
+  TS --> TVH
+  TS --> TxPub
+  TS ..> IAccountClient : <<use>>
+  TQS ..> IAccountClient : <<use>>
+  RAC -up- IAccountClient
+  TxPub --> TxMQObs
+}
+
+package "notification-service (:8083)" {
+  component "Notification\nREST Controller" as NotifAPI
+  component "BankingEventConsumer" as MQConsumer #E4DFEC
+  component "CustomerNotificationObserver" as CNO #E4DFEC
+  component "AuditLogObserver" as ALO #E4DFEC
+  component "NotificationService" as NS
+
+  NotifAPI --> NS
+  MQConsumer --> CNO
+  MQConsumer --> ALO
+  CNO --> NS
+}
+
+queue "RabbitMQ Broker\n(banking.events)" as MQ
+
+database "account_db" as AccDB
+database "transaction_db" as TxDB
+database "notification_db" as NotifDB
+
+RAC --> AccAPI : <<REST / JSON>>
+
+AccMQObs --> MQ : publish BankingEvent
+TxMQObs --> MQ : publish BankingEvent
+MQ --> MQConsumer : consume BankingEvent
+
+CS --> AccDB : JPA
+AS --> AccDB : JPA
+TS --> TxDB : JPA
+TQS --> TxDB : JPA
+NS --> NotifDB : JPA
+ALO --> NotifDB : JPA
+
+legend right
+  |= Color |= Design pattern |
+  |<back:#DDEBF7>          </back>| Factory Method |
+  |<back:#E2F0D9>          </back>| Chain of Responsibility |
+  |<back:#FCE4D6>          </back>| Strategy |
+  |<back:#E4DFEC>          </back>| Observer |
+endlegend
+
+@enduml

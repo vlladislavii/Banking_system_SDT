@@ -1,0 +1,39 @@
+@startuml arch-monolith-deployment
+title Monolithic Architecture - Deployment Diagram
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam node {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam artifact {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+
+node "Client Device\n<<device>>" as Client {
+  artifact "Web / REST Client\n(Browser / Postman)" as Browser
+}
+
+node "Application Server\n<<execution environment>>" as AppServer {
+  artifact "banking-system.jar\n(Spring Boot 4 / Java 21)" as Jar {
+    artifact "customer module"
+    artifact "account module"
+    artifact "transaction module"
+    artifact "event & notification modules"
+  }
+}
+
+database "Database Server\n<<database>>\nH2 / PostgreSQL" as DB {
+  artifact "banking_db\n(customers, accounts,\ntransactions, notifications)"
+}
+
+Client -- AppServer : <<HTTPS / REST>>
+AppServer -- DB : <<JDBC / TCP>>
+
+@enduml

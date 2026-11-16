@@ -1,0 +1,69 @@
+@startuml arch-event-driven-deployment
+title Event-Driven Architecture - Deployment Diagram
+
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 30
+skinparam ranksep 45
+skinparam node {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam artifact {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #555555
+}
+
+node "Client Device\n<<device>>" as Client {
+  artifact "Web / REST Client"
+}
+
+node "API Gateway / Reverse Proxy\n<<execution environment>>" as Gateway {
+  artifact "Gateway Router"
+}
+
+node "Service Cluster\n<<execution environment>>" as Services {
+  node "transaction-node" as TxNode {
+    artifact "transaction-service.jar"
+  }
+  node "account-node" as AccNode {
+    artifact "account-service.jar"
+  }
+  node "notification-node" as NotifNode {
+    artifact "notification-service.jar"
+  }
+  node "audit-node" as AuditNode {
+    artifact "audit-service.jar"
+  }
+}
+
+node "Message Broker Cluster\n<<execution environment>>" as BrokerCluster {
+  artifact "Kafka / RabbitMQ Cluster\n(Durable Event Topics)"
+}
+
+database "transaction_db" as TxDB
+database "account_db" as AccDB
+database "notification_db" as NotifDB
+database "audit_db" as AuditDB
+
+Client -- Gateway : <<HTTPS / REST>>
+Gateway -- TxNode : <<HTTP>>
+Gateway -- AccNode : <<HTTP>>
+Gateway -- NotifNode : <<HTTP>>
+Gateway -- AuditNode : <<HTTP>>
+
+TxNode -- BrokerCluster : <<Pub / Sub>>
+AccNode -- BrokerCluster : <<Pub / Sub>>
+NotifNode -- BrokerCluster : <<Sub>>
+AuditNode -- BrokerCluster : <<Sub>>
+
+TxNode -- TxDB : <<JDBC>>
+AccNode -- AccDB : <<JDBC>>
+NotifNode -- NotifDB : <<JDBC>>
+AuditNode -- AuditDB : <<JDBC>>
+
+@enduml

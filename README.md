@@ -179,3 +179,101 @@ PNG version: [sequence-transfer.png](docs/diagrams/sequence-transfer.png) · Pla
 ![Open an account sequence diagram](docs/diagrams/sequence-open-account.svg)
 
 PNG version: [sequence-open-account.png](docs/diagrams/sequence-open-account.png) · PlantUML source: [sequence-open-account.puml](docs/diagrams/sequence-open-account.puml)
+---
+
+## TASK 6. Software architectures
+
+Three architectural styles are evaluated for the Digital Banking System using the domain packages and design patterns from Tasks 1–5.
+
+### Monolithic architecture
+
+**Structure and data flow.** All five domain packages (`customer`, `account`, `transaction`, `event`, `notification`) are packaged into a single Spring Boot application (`banking-system.jar`) backed by one relational database. REST controllers delegate to domain services inside the same JVM. During a transfer, `TransferService` calls `AccountService` synchronously in memory through `LocalAccountClient`. `AccountService.applyTransfer()` debits the source account, credits the target account, and credits the bank fee account inside one local ACID transaction (`@Transactional`) protected by optimistic locking (`@Version`). Events are dispatched synchronously in memory by `BankingEventPublisher` to `CustomerNotificationObserver` and `AuditLogObserver`.
+
+![Monolithic component diagram](docs/diagrams/arch-monolith-component.svg)
+
+PNG version: [arch-monolith-component.png](docs/diagrams/arch-monolith-component.png) · PlantUML source: [arch-monolith-component.puml](docs/diagrams/arch-monolith-component.puml)
+
+![Monolithic deployment diagram](docs/diagrams/arch-monolith-deployment.svg)
+
+PNG version: [arch-monolith-deployment.png](docs/diagrams/arch-monolith-deployment.png) · PlantUML source: [arch-monolith-deployment.puml](docs/diagrams/arch-monolith-deployment.puml)
+
+| Pros | Cons |
+|------|------|
+| Strong ACID consistency for account balances in a single database transaction | Single point of failure: an unhandled failure or resource spike affects the whole system |
+| Simple local development, end-to-end testing, and single-artifact deployment | Cannot scale high-volume read/transfer workloads independently from notifications |
+| Zero network latency between transfer validation, balance updates, and notifications | Every change requires rebuilding and redeploying the entire application |
+
+---
+
+### Microservices architecture
+
+**Structure and data flow.** The system is split along domain boundaries into three independently deployable Spring Boot services, each owning its own database (Database-per-Service):
+
+- **`account-service` (port 8081):** owns `customer` and `account` data, account creation (**Factory Method**), fee calculation (**Strategy**), and atomic balance updates (`applyTransfer`).
+- **`transaction-service` (port 8082):** owns `transaction` history, transfer validation (**Chain of Responsibility**), and admin inspection. It communicates synchronously over REST with `account-service` through `RestAccountClient` (an **Adapter** implementing `AccountClient`).
+- **`notification-service` (port 8083):** owns `notification` persistence and customer alert queries.
+
+For notifications and audit logging, `account-service` and `transaction-service` keep the in-memory `BankingEventPublisher` (**Observer**) and register a `MessageQueueEventObserver` that publishes `BankingEvent` messages to RabbitMQ, which `notification-service` consumes asynchronously.
+
+![Microservices component diagram](docs/diagrams/arch-microservices-component.svg)
+
+PNG version: [arch-microservices-component.png](docs/diagrams/arch-microservices-component.png) · PlantUML source: [arch-microservices-component.puml](docs/diagrams/arch-microservices-component.puml)
+
+![Microservices deployment diagram](docs/diagrams/arch-microservices-deployment.svg)
+
+PNG version: [arch-microservices-deployment.png](docs/diagrams/arch-microservices-deployment.png) · PlantUML source: [arch-microservices-deployment.puml](docs/diagrams/arch-microservices-deployment.puml)
+
+| Pros | Cons |
+|------|------|
+| Fault isolation: if `notification-service` goes down, transfers still complete and queue in RabbitMQ | Higher operational overhead: three services, three databases, Docker networking, and a broker |
+| Independent scaling of `transaction-service` and `account-service` under transfer load | Network latency and partial failure handling on REST calls between `transaction-service` and `account-service` |
+| Clear service boundaries matching the `AccountClient` interface without rewriting domain logic | Integration and end-to-end testing require running multiple containers together |
+
+---
+
+### Event-driven architecture
+
+**Structure and data flow.** Services have no direct synchronous REST calls between one another; all inter-service communication passes through a central message broker (RabbitMQ or Apache Kafka) using domain events. A fund transfer runs as a **choreographed saga**:
+
+1. `transaction-service` creates a `PENDING` transaction, runs structural checks, and publishes `TransferRequested`.
+2. `account-service` consumes `TransferRequested`, validates account status, funds, and daily limits, applies the debit/credit locally, and publishes `FundsReserved` or `TransferRejected`.
+3. `transaction-service` consumes the outcome, marks the transaction `SUCCESSFUL` or `REJECTED`, and publishes `TransferCompleted`.
+4. `notification-service` and `audit-service` consume the events independently to store alerts and audit entries.
+
+![Event-driven component diagram](docs/diagrams/arch-event-driven-component.svg)
+
+PNG version: [arch-event-driven-component.png](docs/diagrams/arch-event-driven-component.png) · PlantUML source: [arch-event-driven-component.puml](docs/diagrams/arch-event-driven-component.puml)
+
+![Event-driven deployment diagram](docs/diagrams/arch-event-driven-deployment.svg)
+
+PNG version: [arch-event-driven-deployment.png](docs/diagrams/arch-event-driven-deployment.png) · PlantUML source: [arch-event-driven-deployment.puml](docs/diagrams/arch-event-driven-deployment.puml)
+
+| Pros | Cons |
+|------|------|
+| Maximum loose coupling: services only know event schemas, not each other's endpoints | Eventual consistency: clients see a `PENDING` status until the asynchronous saga finishes |
+| Natural absorption of traffic spikes because the broker buffers incoming transfer requests | Complex failure recovery: multi-step sagas require idempotency keys, dead-letter queues, and compensating events |
+| Easy extensibility: new consumers (e.g., fraud detection) subscribe without modifying existing services | Harder debugging and tracing across asynchronous event chains |
+
+---
+
+### Comparison of architectures
+
+| Criterion | Monolithic | Microservices (REST + async events) | Event-driven (choreographed saga) |
+|-----------|------------|-------------------------------------|-----------------------------------|
+| **Implementation complexity** | Low (single codebase and database) | Moderate (3 services, REST client, broker) | High (saga state, idempotency, retries) |
+| **Balance consistency** | Immediate (single local ACID transaction) | Immediate at ledger level (`applyTransfer` is atomic in `account-service`) | Eventual (multi-step async saga) |
+| **Scalability** | Vertical / whole-app replication only | High (each service scales independently) | Very high (broker-buffered elastic consumers) |
+| **Fault isolation** | Low (process-wide failure) | High (notification outages do not block transfers) | Very high (producers and consumers fully decoupled) |
+| **Deployment and ops** | Single JAR and single database | Multiple containers + RabbitMQ + 3 DBs | Multiple containers + HA broker cluster + 4 DBs |
+| **Testing** | Fast unit and single-context integration tests | Unit tests + contract/Docker Compose tests | Complex asynchronous integration testing |
+| **Fit for a 3-person team** | Very good for PoC | Good balance of modularity and realism | Over-engineered for project scope |
+
+---
+
+### Selected architecture
+
+**Microservices architecture with asynchronous events for notifications** is selected as the target architecture for the system (and implemented in Tasks 7–8).
+
+1. **Immediate balance consistency where it matters:** In a banking system, concurrent transfers from the same account must never double-spend funds. Keeping `applyTransfer()` as a synchronous REST call to `account-service` executes the balance check, debit, credit, and `@Version` optimistic lock check inside one local database transaction, avoiding the complexity of compensating transactions in a full choreographed saga.
+2. **Asynchronous decoupling for secondary workflows:** Notifications and audit logging do not need to block the transfer response. Publishing `BankingEvent` messages through `MessageQueueEventObserver` to RabbitMQ keeps `transaction-service` and `account-service` decoupled from `notification-service`.
+3. **Clean evolution from the monolith:** Because `TransferService` already depends on the `AccountClient` interface and services already emit events via `BankingEventPublisher`, splitting the Task 5 monolith into `account-service`, `transaction-service`, and `notification-service` only requires swapping `LocalAccountClient` for `RestAccountClient` and adding `MessageQueueEventObserver`.
